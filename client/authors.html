@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style type="text/css">
+      html { height: 100% }
+      body { 
+        height: 100%; margin: 0; padding: 0; font-size: 12px;
+        background-color: #EEE;
+      }
+      .node {
+        stroke: #fff;
+        stroke-width: 1.5px;
+      }
+
+      .link {
+        stroke: #999;
+        stroke-opacity: .6;
+      }
+    </style>
+    <script src="jquery-1.8.3.min.js"></script>
+    <script src="d3.v3.min.js"></script>
+    <script type="text/javascript">
+
+    if (!String.prototype.format) {
+	  String.prototype.format = function() {
+	    var args = arguments;
+	    return this.replace(/{(\d+)}/g, function(match, number) { 
+	      return typeof args[number] != 'undefined'
+	        ? args[number]
+	        : match
+	      ;
+	    });
+	  };
+	}
+
+	var json = [];
+	$(document).ready(function(){
+
+		// load database as JSON
+		$.getJSON("db.json", function(jsondb) {
+			json = jsondb;
+
+      // some preprocessing here 
+      var N = json.length;
+      //N=100;
+    
+      var adeg = {};
+      for(var i=0;i<N;i++) {
+        var j = json[i];
+        for(var k=0;k<j.a.length;k++){
+          jak = j.a[k];
+          if(jak in adeg) {
+            adeg[jak]+=1;
+          } else {
+            adeg[jak]=1;
+          }
+        }
+      }
+      
+      var coauthors = {};
+      var links = [];
+      for(var i=0;i<N;i++) {
+        var j = json[i];  
+
+        // first figure out if we count this paper. It must be at least decent
+        var rank = 0
+        if (parseInt(j.y) !== 0) { rank = parseInt(j.cn) / (2013 - parseInt(j.y)); }
+        rank = Math.round(rank);
+        if(rank<0 || j.y<2000) continue;
+
+        // maintain affinities for authors
+        for(var k=0;k<j.a.length;k++){
+          var a = j.a[k];
+          if(!(a in coauthors)) coauthors[a] = {};
+
+          for(var k2=0;k2<j.a.length;k2++){
+            if(k===k2) continue;
+            var a2= j.a[k2];
+            if(!(a2 in coauthors[a])) {
+              coauthors[a][a2] = 1; // add them
+            } else {
+              coauthors[a][a2] = coauthors[a][a2] + 1; // increase affinity
+            }
+          }
+        }
+      }
+
+      // construct the graph
+      var nodes = [];
+      var authors = [];
+      for(var a in coauthors) {
+        var ca = coauthors[a];
+        for(var a2 in ca) {
+          var w = ca[a2];
+          if(w > 1) {
+            // add this to graph
+            var ix1 = $.inArray(a, authors);
+            var ix2 = $.inArray(a2, authors);
+            if(ix1===-1) {authors.push(a); ix1=authors.length-1; nodes.push({name: a, group: 1, d: adeg[a]})}
+            if(ix2===-1) {authors.push(a2); ix2=authors.length-1; nodes.push({name: a2, group: 1, d: adeg[a2]})}
+            if(ix1<ix2) { // make sure we dont go both directions. that's silly
+              links.push({source: ix1, target: ix2, value: w});
+            }
+          }
+        }
+      }
+
+      // these, and the charge and linkDistance below have to be played with
+      var width = 2000; 
+      var height = 2000;
+
+      var color = d3.scale.category20();
+      var force = d3.layout.force()
+          .charge(-120)
+          .linkDistance(50)
+          .size([width, height]);
+
+      var svg = d3.select("body").append("svg")
+          .attr("width", width)
+          .attr("height", height);
+
+        force
+            .nodes(nodes)
+            .links(links)
+            .start();
+
+        var link = svg.selectAll(".link")
+            .data(links)
+            .enter().append("line")
+            .attr("class", "link")
+            .style("stroke-width", function(d) { return Math.sqrt(d.value); });
+
+        /*
+        // instead of text can show little circles with this code
+        var node = svg.selectAll(".node")
+            .data(nodes)
+            .enter().append("circle")
+            .attr("class", "node")
+            .attr("r", 5)
+            .style("fill", function(d) { return color(d.group); })
+            .call(force.drag);
+
+        node.append("title")
+            .text(function(d) { return d.name; })
+            .style("fill", "#555")
+            .call(force.drag);
+        */
+        
+        var node = svg.selectAll(".node")
+            .data(nodes)
+            .enter().append("text")
+            .text(function(d){return d.name;})
+            .style("font-size", function(d) { return (Math.round(d.d)+10) + "px"; })
+            .call(force.drag);
+        
+
+        force.on("tick", function() {
+          link.attr("x1", function(d) { return d.source.x; })
+              .attr("y1", function(d) { return d.source.y; })
+              .attr("x2", function(d) { return d.target.x; })
+              .attr("y2", function(d) { return d.target.y; });
+
+          node.attr("dx", function(d) { return d.x; })
+              .attr("dy", function(d) { return d.y; });
+        });
+		});
+
+    });
+
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Research Lei</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <!-- <style type="text/css"></style> -->
+
+    <script src="jquery-1.8.3.min.js"></script>
+    <script type="text/javascript">
+
+    // helper function
+    if (!String.prototype.format) {
+      String.prototype.format = function() {
+        var args = arguments;
+        return this.replace(/{(\d+)}/g, function(match, number) { 
+          return typeof args[number] != 'undefined'
+            ? args[number]
+            : match
+          ;
+        });
+      };
+    }
+
+  // Convert a json object j that represents a paper into an HTML that renders into a paper card
+  var jToHtml = function(j, appendy) {
+
+    // appendy can be used to specify a string that goes in front of the paper title
+    // is used to show the exact score for each paper when ranking, etc
+    if(typeof appendy === "undefined") {
+        appendy = "";
+    } else {
+      appendy = "[" + appendy + "] ";
+    }
+
+    // create html for the part that shows authors. We highlight authors
+    // who are common to the active paper by wrapping an 'aa' span around them
+    var activeauthors = json[active].a;
+    var authorstr = "";
+    for(var i=0;i<j.a.length;i++) {
+      var ixin = $.inArray(j.a[i], activeauthors);
+      if (ixin >= 0) {
+        authorstr += "<span class=\"aa\">"+j.a[i]+"</span>";
+      } else {
+        authorstr += j.a[i];
+      }
+      if(i!==j.a.length-1) authorstr += ", ";
+    }
+    var kwstr = j.k.join(", ");
+
+    // put it all together
+    var ptclass = "ptt";
+    if (inlib[j.i]) ptclass = "pt";
+    var venue = "";
+    if('v' in j) venue = j.v;
+    var htmlstr = "<div class=\"pl\" id=\"p{0}\"> \
+                   <div class=\"pf\"> \
+                    <div class=\"pr\">{7} {5}</div> \
+                    <div class=\"py\">{8}</div> \
+                    <div class=\"py\">{6}</div> \
+                   </div> \
+                   <div class=\"pff\"> \
+                     <div class=\"{1}\">{9}{2}</div> \
+                     <div class=\"pa\">{3}</div> \
+                     <div class=\"pk\">{4}</div> \
+                   </div> \
+                   <div style=\"clear:both\"></div> \
+                   </div>".format(j.i, ptclass, j.t, authorstr, kwstr, j.y, j.citperyear, venue, j.cn, appendy);
+
+    return htmlstr;
+  };
+
+  // a helper function
+  var updateCardHandlers = function() {
+    $(".pl").click(function() {
+      var pid = parseInt($(this).attr('id').substring(1));
+      lastActive.push(active);
+      citshow = 20; // reset these
+      refshow = 20;
+      active = idtoi[pid];
+      setRelated(); // active paper is changing. Update the relatedness
+      updateActive(); // refresh interface
+      $("html, body").animate({ scrollTop: 0 }, "fast");
+
+      // also make sure library is hidden
+      libhidden = true;
+      $("#showlib").html("<img src=\"arrowdown.png\" height=\"40\" />");
+      $("#library").slideUp("fast");
+    });
+  }
+
+  // updates the display of papers. Can also update only some parts
+  var updateActive = function(parts) {
+    if(typeof parts === "undefined") {
+      parts = ["cits", "refs", "paper"]; // by default update everything
+    }
+    
+    var j = json[active];
+
+    // fill in the active paper
+    if($.inArray("paper", parts)!==-1) {
+      
+      var ahtml = "";
+      ahtml += jToHtml(j);
+      ahtml += "<br />"
+      $("#paper").html(ahtml);
+
+      // image thumbnails
+      if('h' in j) {
+        var thumbstr = "<div class=\"pi\">";
+        var thumbpaths = j.h;
+        for(var k=0;k<thumbpaths.length;k++) {
+          thumbstr += "<img src=\"" + thumbpaths[k] + "\"></img>"
+        }
+        thumbstr += "</div>"
+        $("#paper").append(thumbstr);
+      }
+
+      // abstract
+      if('b' in j) {
+        $("#paper").append("<br /><b>Abstract:</b><br /><b>" + j.b + "...</b><br /><br />");
+      }
+
+      // top words in this paper
+      if('tw' in j) {
+        var hh = "<div class=\"ptw\"><b>Top 100 words:</b><br />";
+        hh += j.tw.join(", ");
+        hh += "</div>";
+        $("#paper").append(hh);
+      }
+
+      // links to full version
+      if('p' in j) {
+        var hh = "<br /><b>Full Text Links:</b><br />";
+        if (inlib[j.i]) hh += "<a href=\"../db/"+j.i+"/paper.pdf\">paper.pdf</a><br />";
+        for(var i=0;i<j.p.length;i++) {
+          hh += "<a href=\"{0}\">{0}</a><br />".format(j.p[i]);
+        }
+        $("#paper").append(hh);
+      }
+
+      // hint on how to download (if this paper is not in library)
+      if(!('r' in j)) {
+        $("#paper").append("<br /><span style=\"color:red; font-weight:bold;\">This paper is not yet in your library. Download with:</span><br />python addpaper.py id " + j.i);
+      }
+    }
+
+    // insert citations
+    if($.inArray("cits", parts)!==-1) {
+      
+      var cits = "";
+      if('c' in j) {
+        var cs = j.c;
+        var nl = Math.min(cs.length, citshow);
+
+        cs.sort(function(a,b){ 
+          i1=idtoi[a];
+          i2=idtoi[b];
+          return json[i1][citsortkey] < json[i2][citsortkey] ? 1 : -1;
+        });
+
+        for(var i=0;i<nl;i++) {
+          cits += jToHtml(json[idtoi[cs[i]]]);
+        }
+      }
+      $("#cits").html(cits);
+      $("#cits").hide();
+      $("#cits").fadeIn("fast");
+    }
+
+    // insert references
+    if($.inArray("refs", parts)!==-1) {
+
+      var refs = "";
+      if('r' in j) {
+        var rs = j.r;
+        var nl = Math.min(rs.length, refshow);
+
+        // sort by some order
+        rs.sort(function(a,b){ 
+          var i1=idtoi[a];
+          var i2=idtoi[b];
+          return json[i1][refsortkey] < json[i2][refsortkey] ? 1 : -1;
+        });
+
+        for(var i=0;i<nl;i++) {
+          refs += jToHtml(json[idtoi[rs[i]]]);
+        }
+      }
+      $("#refs").html(refs);
+      $("#refs").hide();
+      $("#refs").fadeIn("fast");
+    }
+
+    // highlight the appropriate sorting orders
+    updateSortDisplays();
+
+    // update click handlers for all created cards
+    updateCardHandlers();
+  }
+
+  // looks at what sorting order is currently used and highlights it in UI
+  var updateSortDisplays = function() {
+    var unhc = "#FEA";  // highlighted and unhighlighted colors
+    var hc = "#FF3";
+    $("#rysort").css("background-color", refsortkey=='y' ? hc : unhc);
+    $("#rcsort").css("background-color", refsortkey=='cn' ? hc : unhc);
+    $("#rcysort").css("background-color", refsortkey=='citperyear' ? hc : unhc);
+    $("#rrsort").css("background-color", refsortkey=='related' ? hc : unhc);
+
+    $("#cysort").css("background-color", citsortkey=='y' ? hc : unhc);
+    $("#ccsort").css("background-color", citsortkey=='cn' ? hc : unhc);
+    $("#ccysort").css("background-color", citsortkey=='citperyear' ? hc : unhc);
+    $("#crsort").css("background-color", citsortkey=='related' ? hc : unhc);
+  }
+
+  // helper function that finds relatedness to the active paper
+  // we do this by counting number of authors in common with this paper
+  var setRelated = function() { 
+
+    var aa = json[active].a;
+    for(var i=0;i<json.length;i++) {
+      var j = json[i];
+      var score = Math.min(j.cn*0.01, 0.99); // skew preference to cited papers
+      for(var k=0;k<j.a.length;k++) {
+        for(var q=0;q<aa.length;q++) {
+          if(j.a[k]===aa[q]) score++;
+        }
+      }
+      j.related = score;
+    }
+  }
+
+  // some global variables
+  var active = 0; // active paper being inspected in the interface
+  var lastActive = [0];  // history of active papers we keep so we can go backwards
+  var json = [];  // stores json of all papers in database. gets loaded at startup
+  var idtoi = {}; // mapping of paper id -> index in json[] list
+  var inlib = {}; // mapping of paper id -> boolean that indicates if this paper is in library
+  var refsortkey = 'related';  // what are we sorting by for references?
+  var citsortkey = 'related';  // what are we sorting by for citations?
+  var refshow = 20; // how many references are we showing?
+  var citshow = 20; // how many citations are we showing?
+  var libhidden = true;  // keeps state information on whether the library is currently visible
+  $(document).ready(function(){
+
+    // load database as JSON
+    $.getJSON("db.json", function(jsondb) {
+      json = jsondb;
+        
+      // some preprocessing here
+      for(var i=0;i<json.length;i++) {
+        var j = json[i];        
+        idtoi[j.i] = i;
+        inlib[j.i] = 'r' in j || 'c' in j || 'tw' in j || 'h' in j;
+
+        var rank = 0
+        if (parseInt(j.y) !== 0) { rank = parseInt(j.cn) / (2013 - parseInt(j.y)); }
+        rank = Math.round(rank*10)/10;
+        j.citperyear = rank;
+
+        j.tlower = j.t.toLowerCase();
+        j.allauthors = (j.a.join(" ")).toLowerCase();
+      }
+
+      // fill library
+      var libh="";
+      for(var i=0;i<json.length;i++) {
+        var j=json[i];
+        if (inlib[j.i]) {
+          libh += jToHtml(j);
+        }
+      }
+      $("#library").html(libh);
+
+      setRelated();
+      updateActive();
+
+      // below we establish all the click handler functions
+      // different sorts for references
+      $("#rysort").click(function() { refsortkey = 'y'; updateActive(["refs"]); });
+      $("#rcsort").click(function() { refsortkey = 'cn'; updateActive(["refs"]); });
+      $("#rcysort").click(function() { refsortkey = 'citperyear'; updateActive(["refs"]); });
+      $("#rrsort").click(function() { refsortkey = 'related'; setRelated(); updateActive(["refs"]); });
+
+      // different sorts for citations
+      $("#cysort").click(function() { citsortkey = 'y'; updateActive(["cits"]); });
+      $("#ccsort").click(function() { citsortkey = 'cn'; updateActive(["cits"]); });
+      $("#ccysort").click(function() { citsortkey = 'citperyear'; updateActive(["cits"]); });
+      $("#crsort").click(function() { citsortkey = 'related'; setRelated(); updateActive(["cits"]); });
+
+      // clicking "more" for references/citations
+      $("#citshowmore").click(function() {if(citshow>=json[active].cn){return;} citshow += 20; updateActive(["cits"]); } );
+      $("#refshowmore").click(function() {if(refshow>=json[active].rn){return;} refshow += 20; updateActive(["refs"]); } );
+
+      // going back in history
+      $("#backbutton").click(function() {
+        if(lastActive.length===0)return; 
+        active = lastActive[lastActive.length-1]; 
+        lastActive.pop(); 
+        updateActive(); 
+      });
+
+      // requesting to see list of recommended papers to read (often referenced)
+      $("#recommendlink").click(function() {
+        var scores = [];
+        var crank = {};
+        for(var i=0;i<json.length;i++) {
+          var j = json[i];
+          if(!('r' in j)) continue;
+          var rs = j.r;
+          for(var k=0;k<rs.length;k++) {
+            var cc = rs[k];
+            if(cc in crank) {
+              crank[cc] = crank[cc]+1;
+            } else {
+              crank[cc] = 1;
+            }
+          }
+        }
+        for(var cc in crank) { scores.push({pid: cc, s: crank[cc]}); }
+        scores.sort(function(a,b){return a.s < b.s ? 1 : -1});
+        //console.log(scores);
+        var r= "<div style=\"text-align: center; font-weight: bold; font-size: 16px; padding: 5px;\">Often cited papers: </div>";
+        for(var i=0;i<scores.length;i++) {
+          var j = json[idtoi[scores[i].pid]];
+          r += jToHtml(j, scores[i].s);
+        }
+        $("#paper").html(r);
+        $("#cits").html('');
+        $("#refs").html('');
+        $(this).val('');
+
+        updateCardHandlers();
+      });
+
+      // user presses enter in search box
+      $("#qinput").keyup(function(event){
+        if(event.keyCode !== 13) return;
+
+        var qstr = $(this).val().toLowerCase();
+        var qarr = qstr.split(' '); // get the queries
+
+        // iterate over ALL papers for matches. Yes, this is O(N) silly search
+        var scores = [];
+        for(var i=0;i<json.length;i++) {
+          var j=json[i];
+          var points = 0;
+          for(var k=0;k<qarr.length;k++) {
+            var q = qarr[k];
+            if(j.tlower.indexOf(q) !== -1) {
+              points += 1;
+            }
+            if(j.allauthors.indexOf(q) !== -1) {
+              points += 1;
+            }
+          }
+          if(points>0) {
+            points += Math.min(1, j.citperyear/1000); // favor these
+            scores.push({pid: i, s: points});
+          }
+        }
+
+        scores.sort(function(a,b){return a.s < b.s ? 1 : -1});
+        var r= "";
+        for(var i=0;i<scores.length;i++) {
+          var j = json[scores[i].pid];
+          r += jToHtml(j);  
+        }
+        
+        $("#paper").html(r);
+        $("#cits").html('');
+        $("#refs").html('');
+        $(this).val('');
+
+        updateCardHandlers();
+      });
+    }); // end of json database loaded callback
+  
+    // create click handler for clicking the library icon (hide/show jquery toggle, swap image)
+    $("#showlib").click(function() {
+      libhidden = !libhidden;
+      if(libhidden) {$("#showlib").html("<img src=\"arrowdown.png\" height=\"40\" />");}
+      else {$("#showlib").html("<img src=\"arrowup.png\" height=\"40\" />");}
+      $("#library").slideToggle("fast");
+    });
+  }); // end of document ready callback
+  </script>
+  </head>
+  <body>
+
+    <div id="header">
+      <div id="backbutton" title="go back"><img src="back.png" height="40" /></div>
+      <input id="qinput" type="text" value="" />
+      <div id="showlib" title="show library"><img src="arrowdown.png" height="40" /></div>
+      <div id="graphlink" title="show co-author graph"><a href="authors.html" target="_blank"><img src="graph.png" height="40" /></a></div>
+      <div id="recommendlink" title="recommend papers"><img src="bulb.png" height="40" /></div>
+    </div>
+
+    <div id="wrapper">
+      <div>
+        <div id="library"></div>
+        <div style="clear:both;"></div>
+      </div>
+
+      <div id="refswrap">
+        <div id="refsort">
+          <div class="sorttitle">References</div>
+          <span class="sbb">Sort by:</span>
+          <span id="rysort" class="sb">Year</span>
+          <span id="rcsort" class="sb">Citations</span>
+          <span id="rcysort" class="sb">Citations / Year</span>
+          <span id="rrsort" class="sb">Relatedness</span>
+          <div style="clear:both;"></div>
+        </div>
+        <div id="refs"></div>
+        <div id="refshowmore">show more</div>
+      </div>
+
+      <div id="paper"></div>
+
+      <div id="citswrap">
+        <div id="citsort">
+          <div class="sorttitle">Citations</div>
+          <span class="sbb">Sort by:</span>
+          <span id="cysort" class="sb">Year</span>
+          <span id="ccsort" class="sb">Citations</span>
+          <span id="ccysort" class="sb">Citations / Year</span>
+          <span id="crsort" class="sb">Relatedness</span>
+          <div style="clear:both;"></div>
+        </div>
+        <div id="cits"></div>
+        <div id="citshowmore">show more</div>
+      </div>
+
+      <div id="footer"></div>
+    </div>
+
+
+  </body>
+</html>
