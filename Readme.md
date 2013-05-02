@@ -33,6 +33,10 @@ Feel free to contact me for questions, suggestions on Twitter: https://twitter.c
 1. view library: open `client/index.html`
 2. follow instructions in interface to download any specific paper of interest, or goto 0. to add a custom new paper
 
+#### FAQ
+Q: Microsoft Academic Search is sparser than Google Scholar, especially on very recent work. Could you use Scholar instead?
+A: No. Google Scholar does not provide API that allows you to easily download their structured data. It is possible to scrape the HTML manually, but they aggressively throttle your requests. Even if you could, they don't provide as much data. For example, they don't provide references, abstracts, etc. Or if there are more than a few authors on a paper, they simply write "..." and refer you to a publisher's page for the paper. I wish Google Scholar was as cool as Microsoft Academic Search. However, I've written MAS about this issue and they told me that they are actively working to index more papers and that we should all stay tuned. Lets hope for the best.
+
 #### Licence
 
 BSD licence
