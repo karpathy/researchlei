@@ -33,7 +33,7 @@ if not os.path.isfile('appid.txt'):
 
 if not os.path.isdir('db'): os.mkdir('db')
 
-appid= open('appid.txt', 'r').read()
+appid= open('appid.txt', 'r').read().rstrip()
 globaldb = os.path.join('db', 'papers.p')
 if not os.path.isfile(globaldb): pickle.dump([], open(globaldb, "wb"))
 
@@ -178,6 +178,10 @@ for i in range(2):
   print "wrote %d/%d new entries to papers.p pickle." % (numadded, len(pubs))
 
 
+opencommand = "gnome-open"
+if sys.platform == 'darwin':
+  opencommand = "open"
+
 # download full PDF
 pdfpath = os.path.join('db', idstr, 'paper.pdf')
 urls = pub['FullVersionURL']
@@ -191,10 +195,10 @@ for u in pdfurls:
     urllib.urlretrieve(u, pdfpath)
     print "saved pdf at ", pdfpath
     try:
-      print "opening the pdf using gnome-open (assuming Linux) for your convenience to verify the download..."
-      os.system("gnome-open " + pdfpath)
+      print "opening the pdf using %s (%s) for your convenience to verify the download..." %(opencommand, sys.platform)
+      os.system(opencommand + " " + pdfpath)
     except Error, e:
-      print "gnome-open failed. Make sure the downloaded %s pdf is correct." % (pdfpath, )
+      print "%s failed. Make sure the downloaded %s pdf is correct." % (opencommand, pdfpath, )
     isok = raw_input("download good? y/n: ")
     if isok=="y":
       gotit = True
